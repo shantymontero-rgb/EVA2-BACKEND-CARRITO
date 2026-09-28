@@ -1,38 +1,25 @@
 ﻿{% extends 'store/base.html' %}
-{% block title %}Acceso - CentralMarket{% endblock %}
+{% block title %}Acceso Institucional - MediSupply{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center mt-5">
-    <div class="col-md-5 col-lg-4">
-        <div class="card card-matcha p-4 text-center">
-            <div class="mb-4">
-                <div class="p-3 bg-success bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-2" style="width: 60px; height: 60px;">
-                    <i class="bi bi-shield-lock-fill fs-2 text-success"></i>
-                </div>
-                <h3 class="fw-bold mb-1" style="color: #0b3d26;">Iniciar Sesión</h3>
-                <small class="text-muted">Accede a tu cesta segura mediante token JWT</small>
-            </div>
-
-            <div id="errorAlert" class="alert alert-danger d-none py-2 small rounded-3"></div>
+    <div class="col-md-4">
+        <div class="card card-med p-4 text-center">
+            <i class="bi bi-shield-lock-fill fs-1 text-primary mb-2"></i>
+            <h4 class="fw-bold">Acceso MediSupply</h4>
+            <p class="text-muted small">Ingrese credenciales clinicas o de bodega</p>
+            <div id="errorAlert" class="alert alert-danger d-none py-2 small"></div>
 
             <form id="loginForm" class="text-start">
                 <div class="mb-3">
-                    <label class="form-label small fw-semibold text-muted">Nombre de Usuario</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-light border-0"><i class="bi bi-person text-success"></i></span>
-                        <input type="text" id="username" class="form-control border-0 bg-light" placeholder="admin" required autofocus>
-                    </div>
+                    <label class="form-label small fw-semibold">Usuario</label>
+                    <input type="text" id="username" class="form-control" required autofocus>
                 </div>
-                <div class="mb-4">
-                    <label class="form-label small fw-semibold text-muted">Contraseña</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-light border-0"><i class="bi bi-key text-success"></i></span>
-                        <input type="password" id="password" class="form-control border-0 bg-light" placeholder="••••••••" required>
-                    </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Contrasena</label>
+                    <input type="password" id="password" class="form-control" required>
                 </div>
-                <button type="submit" class="btn btn-matcha w-100 py-2 shadow-sm">
-                    Acceder a mi Canasta
-                </button>
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">Ingresar con JWT</button>
             </form>
         </div>
     </div>
@@ -46,23 +33,28 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     const alertBox = document.getElementById('errorAlert');
     alertBox.classList.add('d-none');
 
-    const userTyped = document.getElementById('username').value.trim();
-    const passTyped = document.getElementById('password').value;
+    const u = document.getElementById('username').value.trim();
+    const p = document.getElementById('password').value;
 
     const res = await fetch('/api/token/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: userTyped, password: passTyped })
+        body: JSON.stringify({ username: u, password: p })
     });
+    const d = await res.json();
 
-    const data = await res.json();
-    if (res.ok && data.access) {
-        localStorage.setItem('access_token', data.access);
-        localStorage.setItem('username', userTyped);
-        localStorage.setItem('show_welcome', 'true');
-        window.location.href = '/cart/';
+    if (res.ok && d.access) {
+        localStorage.setItem('access_token', d.access);
+        localStorage.setItem('username', d.username);
+        localStorage.setItem('user_role', d.role);
+
+        if (d.role === 'GESTOR_BODEGA') {
+            window.location.href = '/dashboard/';
+        } else {
+            window.location.href = '/carro/';
+        }
     } else {
-        alertBox.textContent = data.detail || 'Usuario o contraseña no válidos.';
+        alertBox.textContent = d.detail || 'Credenciales invalidas';
         alertBox.classList.remove('d-none');
     }
 });

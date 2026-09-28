@@ -1,73 +1,55 @@
 ﻿{% extends 'store/base.html' %}
-{% block title %}Mi Carro - CentralMarket{% endblock %}
+{% block title %}Solicitud de Insumos - MediSupply{% endblock %}
 
 {% block content %}
-<div id="welcomeAlert" class="alert alert-success border-0 alert-dismissible fade show d-none shadow-sm mb-4" role="alert" style="background-color: #d1e7dd; color: #0f5132; border-radius: 16px;">
-    <div class="d-flex align-items-center">
-        <i class="bi bi-stars fs-4 me-2 text-success"></i>
-        <div>
-            <h6 class="alert-heading mb-0 fw-bold">¡Hola, <span id="welcomeUserName"></span>!</h6>
-            <small>Tu sesión con autenticación JWT está activa.</small>
-        </div>
-    </div>
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
     <div>
-        <h2 class="fw-bold mb-1" style="color: #0b3d26;">Tu Carro de Compras</h2>
-        <p class="text-muted mb-0">Total acumulado: <span id="cartCountHeader" class="fw-bold text-success">0</span> artículos</p>
+        <h2 class="fw-bold text-dark">Solicitud de Abastecimiento</h2>
+        <p class="text-muted mb-0">Total acumulado: <span id="cartCountBadge" class="fw-bold text-primary">0</span> cajas en carro</p>
     </div>
-    <a href="/" class="btn btn-outline-success rounded-pill px-4 fw-semibold">
-        <i class="bi bi-arrow-left me-1"></i> Seguir Comprando
-    </a>
+    <a href="/" class="btn btn-outline-secondary rounded-pill px-3">Seguir Agregando</a>
 </div>
 
-<div class="card card-matcha p-4">
+<div class="card card-med p-4 mb-4">
     <div class="table-responsive">
         <table class="table table-hover align-middle">
-            <thead>
-                <tr style="color: #0b3d26; border-bottom: 2px solid #e1f0e8;">
-                    <th>Artículo</th>
-                    <th>Valor</th>
+            <thead class="table-light">
+                <tr>
+                    <th>Insumo Clinico</th>
+                    <th>Lote</th>
+                    <th>Precio Caja</th>
                     <th style="text-align: center;">Cantidad</th>
                     <th>Subtotal</th>
                     <th style="text-align: center;">Acciones</th>
                 </tr>
             </thead>
-            <tbody id="cartTableBody">
-                <!-- Se llena con JS -->
-            </tbody>
+            <tbody id="cartTableBody"></tbody>
         </table>
     </div>
-    
-    <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top" style="border-color: #e1f0e8 !important;">
-        <span class="text-muted small"><i class="bi bi-shield-check text-success me-1"></i> Transacción segura con JWT</span>
-        <div class="d-flex align-items-center gap-3">
-            <span class="fs-5 text-muted">Total a Pagar:</span>
-            <h3 class="mb-0 fw-bold" style="color: #157347;" id="cartTotal">$0</h3>
-        </div>
+    <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+        <h4 class="fw-bold mb-0">Total: <span id="cartTotal" class="text-primary">$0</span></h4>
+        <button class="btn btn-success px-4 rounded-pill fw-bold" onclick="checkout()">
+            <i class="bi bi-shield-check me-1"></i> Confirmar y Pagar Orden
+        </button>
     </div>
 </div>
 
-<!-- Modal para Editar Cantidad -->
-<div class="modal fade" id="editCartModal" tabindex="-1">
+<!-- Modal para Editar Cajas -->
+<div class="modal fade" id="editModal" tabindex="-1">
     <div class="modal-dialog modal-sm modal-dialog-centered">
-        <div class="modal-content border-0 shadow" style="border-radius: 16px;">
+        <div class="modal-content border-0 shadow">
             <div class="modal-header bg-light">
-                <h6 class="modal-title fw-bold" id="editModalTitle">Modificar Cantidad</h6>
+                <h6 class="modal-title fw-bold" id="editTitle">Modificar Cajas</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="editItemId">
-                <div class="mb-3">
-                    <label class="form-label small text-muted">Nueva cantidad:</label>
-                    <input type="number" id="editItemQty" class="form-control text-center" min="1">
-                </div>
+                <label class="form-label small text-muted">Nueva cantidad de cajas:</label>
+                <input type="number" id="editItemQty" class="form-control text-center" min="1">
             </div>
             <div class="modal-footer border-0">
                 <button type="button" class="btn btn-sm btn-secondary rounded-pill" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-sm btn-matcha rounded-pill px-3" onclick="saveCartItemEdit()">Guardar</button>
+                <button type="button" class="btn btn-sm btn-primary rounded-pill px-3" onclick="saveItemEdit()">Guardar</button>
             </div>
         </div>
     </div>
@@ -79,112 +61,92 @@
 const token = localStorage.getItem('access_token');
 if (!token) window.location.href = '/login/';
 
-let editModal = null;
+let modalInstance = null;
 document.addEventListener("DOMContentLoaded", () => {
-    editModal = new bootstrap.Modal(document.getElementById('editCartModal'));
-    const showWelcome = localStorage.getItem('show_welcome');
-    const username = localStorage.getItem('username');
-    if (showWelcome === 'true') {
-        document.getElementById('welcomeUserName').textContent = username || 'Usuario';
-        document.getElementById('welcomeAlert').classList.remove('d-none');
-        localStorage.removeItem('show_welcome');
-    }
+    modalInstance = new bootstrap.Modal(document.getElementById('editModal'));
 });
 
 function loadCart() {
-    fetch('/api/cart/', { headers: { 'Authorization': `Bearer ${token}` } })
-    .then(res => {
-        if (res.status === 401) {
-            localStorage.removeItem('access_token');
-            window.location.href = '/login/';
-            return;
-        }
-        return res.json();
-    })
-    .then(data => {
-        const tbody = document.getElementById('cartTableBody');
-        tbody.innerHTML = '';
-        let total = 0;
+    fetch('/api/carro-insumos/', { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(res => res.json())
+        .then(data => {
+            const tbody = document.getElementById('cartTableBody');
+            tbody.innerHTML = '';
+            document.getElementById('cartCountBadge').textContent = data.total_items_count || 0;
 
-        const items = data.items || [];
-        const count = data.total_items_count || 0;
-        document.getElementById('cartCountHeader').textContent = count;
-
-        if (items.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-5">Tu carro está vacío.</td></tr>';
-            document.getElementById('cartTotal').textContent = '$0';
-            refreshCartBadge();
-            return;
-        }
-
-        items.forEach(item => {
-            total += Number(item.subtotal);
-            tbody.innerHTML += `
-                <tr>
-                    <td class="fw-bold" style="color: #0b3d26;">${item.product_name}</td>
-                    <td>$${Number(item.product_price).toLocaleString('es-CL')}</td>
-                    <td style="text-align: center;">
-                        <span class="badge bg-light text-dark border px-3 py-2 rounded-pill">${item.quantity}</span>
-                    </td>
-                    <td class="fw-bold" style="color: #157347;">$${Number(item.subtotal).toLocaleString('es-CL')}</td>
-                    <td style="text-align: center;">
-                        <button class="btn btn-sm btn-outline-primary rounded-pill px-3 me-1" onclick="openEditModal(${item.id}, '${item.product_name}', ${item.quantity})">
-                            <i class="bi bi-pencil-fill me-1"></i> Editar
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger rounded-pill px-3" onclick="removeFromCart(${item.id})">
-                            <i class="bi bi-x-circle me-1"></i> Quitar
-                        </button>
-                    </td>
-                </tr>
-            `;
+            if (!data.items || data.items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No hay insumos en el carro.</td></tr>';
+                document.getElementById('cartTotal').textContent = '$0';
+                return;
+            }
+            data.items.forEach(it => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="fw-bold">${it.insumo_nombre}</td>
+                        <td><code>${it.lote}</code></td>
+                        <td>$${Number(it.precio_caja).toLocaleString('es-CL')}</td>
+                        <td style="text-align: center;"><span class="badge bg-light text-dark border px-3">${it.cantidad} cajas</span></td>
+                        <td class="fw-bold text-success">$${Number(it.subtotal).toLocaleString('es-CL')}</td>
+                        <td style="text-align: center;">
+                            <button class="btn btn-sm btn-outline-primary rounded-pill px-2 me-1" onclick="openEdit(${it.id}, '${it.insumo_nombre}', ${it.cantidad})">
+                                <i class="bi bi-pencil-fill"></i> Editar
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger rounded-pill px-2" onclick="removeItem(${it.id})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            document.getElementById('cartTotal').textContent = '$' + Number(data.monto_total).toLocaleString('es-CL');
         });
-        document.getElementById('cartTotal').textContent = '$' + total.toLocaleString('es-CL');
-        refreshCartBadge();
-    });
 }
 
-function openEditModal(itemId, productName, currentQty) {
-    document.getElementById('editItemId').value = itemId;
-    document.getElementById('editModalTitle').textContent = `Editar: ${productName}`;
-    document.getElementById('editItemQty').value = currentQty;
-    editModal.show();
+function openEdit(id, name, qty) {
+    document.getElementById('editItemId').value = id;
+    document.getElementById('editTitle').textContent = `Editar: ${name}`;
+    document.getElementById('editItemQty').value = qty;
+    modalInstance.show();
 }
 
-function saveCartItemEdit() {
-    const itemId = document.getElementById('editItemId').value;
-    const newQty = parseInt(document.getElementById('editItemQty').value, 10);
-
-    if (isNaN(newQty) || newQty < 0) {
-        alert("Ingresa una cantidad válida.");
-        return;
-    }
-
-    fetch(`/api/cart/${itemId}/`, {
+function saveItemEdit() {
+    const id = document.getElementById('editItemId').value;
+    const qty = document.getElementById('editItemQty').value;
+    fetch(`/api/carro-insumos/${id}/`, {
         method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ quantity: newQty })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ cantidad: parseInt(qty) })
     })
     .then(async res => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Error al actualizar.");
-        return data;
-    })
-    .then(data => {
-        editModal.hide();
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || 'Error al actualizar');
+        modalInstance.hide();
         loadCart();
     })
     .catch(err => alert(err.message));
 }
 
-function removeFromCart(itemId) {
-    if (!confirm("¿Deseas retirar este artículo?")) return;
-    fetch(`/api/cart/${itemId}/`, {
+function removeItem(id) {
+    if (!confirm("Desea quitar este insumo?")) return;
+    fetch(`/api/carro-insumos/${id}/`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
     }).then(() => loadCart());
+}
+
+function checkout() {
+    if (!confirm("Desea confirmar y pagar esta solicitud?")) return;
+    fetch('/api/solicitudes/confirmar/', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(async res => {
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || 'Error al procesar');
+        alert("Solicitud autorizada. Estado: PAGADO. Stock de cajas descontado.");
+        loadCart();
+    })
+    .catch(err => alert(err.message));
 }
 
 loadCart();

@@ -1,108 +1,61 @@
 ﻿{% extends 'store/base.html' %}
-{% block title %}Dashboard y Métricas - CentralMarket{% endblock %}
+{% block title %}Panel Gestor de Bodega{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
     <div>
-        <span class="badge bg-success mb-1">Métricas en Tiempo Real</span>
-        <h2 class="fw-bold" style="color: #0b3d26;">Panel de Control y Alcance</h2>
-        <p class="text-muted mb-0">KPIs de rendimiento de la tienda, engagement y supervisión de stock.</p>
+        <span class="badge bg-danger mb-1">Acceso Gestor de Bodega</span>
+        <h2 class="fw-bold text-dark">Panel de Abastecimiento y Control Clinico</h2>
+        <p class="text-muted mb-0">KPIs de rotacion, riesgo de caducidad y alcance hospitalario.</p>
     </div>
-    <a href="/" class="btn btn-outline-success rounded-pill px-3">
-        <i class="bi bi-arrow-left me-1"></i> Ir al Catálogo
-    </a>
+    <a href="/" class="btn btn-outline-primary rounded-pill px-3">Ir a Insumos</a>
 </div>
 
-<!-- Fila 1: Métricas Principales (KPIs) -->
 <div class="row g-3 mb-4">
     <div class="col-md-3">
-        <div class="card card-matcha p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Alcance de Usuarios</small>
-            <h3 class="fw-bold text-success mt-2 mb-0" id="statReach">0%</h3>
-            <small class="text-muted" id="statReachDetail">0 de 0 activos</small>
+        <div class="card card-med p-3 text-center">
+            <small class="text-muted text-uppercase fw-semibold">Alcance Institucional</small>
+            <h3 class="fw-bold text-primary mt-2 mb-0" id="statReach">0%</h3>
+            <small class="text-muted" id="statReachDetail">0 clinicas activas</small>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card card-matcha p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Ingreso Potencial (Carros)</small>
-            <h3 class="fw-bold text-primary mt-2 mb-0" id="statPotentialRev">$0</h3>
-            <small class="text-muted" id="statItemsInCart">0 artículos en espera</small>
+        <div class="card card-med p-3 text-center">
+            <small class="text-muted text-uppercase fw-semibold">Riesgo Caducidad (&lt;1 ano)</small>
+            <h3 class="fw-bold text-warning mt-2 mb-0" id="statRisk">0%</h3>
+            <small class="text-muted" id="statRiskDetail">0 lotes proximos</small>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card card-matcha p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Valor Total Inventario</small>
-            <h3 class="fw-bold text-dark mt-2 mb-0" id="statInventoryValue">$0</h3>
-            <small class="text-muted" id="statProductsCount">0 productos activos</small>
+        <div class="card card-med p-3 text-center">
+            <small class="text-muted text-uppercase fw-semibold">Total Recaudado</small>
+            <h3 class="fw-bold text-success mt-2 mb-0" id="statRecaudado">$0</h3>
+            <small class="text-muted">Ordenes pagadas</small>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card card-matcha p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Alertas de Stock Crítico</small>
-            <h3 class="fw-bold text-danger mt-2 mb-0" id="statCritical">0</h3>
-            <small class="text-danger">&le; 3 unidades restantes</small>
+        <div class="card card-med p-3 text-center">
+            <small class="text-muted text-uppercase fw-semibold">Stock Critico (&le; 5)</small>
+            <h3 class="fw-bold text-danger mt-2 mb-0" id="statCriticos">0</h3>
+            <small class="text-danger">Riesgo de quiebre</small>
         </div>
     </div>
 </div>
 
-<!-- Fila 2: Barra de Alcance y Monitoreo -->
-<div class="row g-4 mb-4">
-    <div class="col-md-6">
-        <div class="card card-matcha p-4 h-100">
-            <h5 class="fw-bold mb-3" style="color: #0b3d26;"><i class="bi bi-pie-chart-fill text-success me-2"></i>Métrica de Alcance Comercial</h5>
-            <p class="text-muted small">Porcentaje de la base de usuarios con intención de compra activa (artículos añadidos al carro).</p>
-            
-            <div class="mb-2 d-flex justify-content-between">
-                <span class="fw-semibold">Tasa de Conversión/Alcance</span>
-                <span class="fw-bold text-success" id="progressText">0%</span>
-            </div>
-            <div class="progress" style="height: 18px; border-radius: 10px;">
-                <div id="reachProgressBar" class="progress-bar bg-success progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
-            </div>
-            <div class="mt-3 small text-muted">
-                <i class="bi bi-info-circle me-1"></i> Calculado como: <code>(Usuarios con Carro / Usuarios Registrados) &times; 100</code>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-6">
-        <div class="card card-matcha p-4 h-100">
-            <h5 class="fw-bold mb-3" style="color: #0b3d26;"><i class="bi bi-shield-check text-success me-2"></i>Arquitectura y Estado</h5>
-            <ul class="list-unstyled mb-0 small">
-                <li class="py-2 border-bottom d-flex justify-content-between">
-                    <span>Manejo de rutas inválidas (404):</span>
-                    <span class="badge bg-success">Resuelto con re_path</span>
-                </li>
-                <li class="py-2 border-bottom d-flex justify-content-between">
-                    <span>Autenticación de panel:</span>
-                    <span class="badge bg-primary">JWT + IsAdminUser</span>
-                </li>
-                <li class="py-2 d-flex justify-content-between">
-                    <span>Documentación interactiva:</span>
-                    <a href="/docs/" target="_blank" class="fw-semibold text-decoration-none text-success">Swagger UI &rarr;</a>
-                </li>
-            </ul>
-        </div>
-    </div>
-</div>
-
-<!-- Tabla de Productos en Stock Crítico -->
-<div class="card card-matcha p-4">
-    <h5 class="fw-bold mb-3" style="color: #0b3d26;"><i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Inventario en Riesgo de Quiebre</h5>
+<div class="card card-med p-4">
+    <h5 class="fw-bold text-danger mb-3"><i class="bi bi-exclamation-triangle me-2"></i>Insumos con Quiebre Inminente de Stock</h5>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-            <thead>
-                <tr class="table-light">
-                    <th>ID</th>
-                    <th>Producto</th>
-                    <th>Categoría</th>
-                    <th>Precio</th>
-                    <th>Stock Actual</th>
+            <thead class="table-light">
+                <tr>
+                    <th>Nombre Comercial</th>
+                    <th>Principio Activo</th>
+                    <th>Lote</th>
+                    <th>Vencimiento</th>
+                    <th>Stock Cajas</th>
                 </tr>
             </thead>
-            <tbody id="criticalTableBody">
-                <!-- JS -->
-            </tbody>
+            <tbody id="criticosTableBody"></tbody>
         </table>
     </div>
 </div>
@@ -113,52 +66,41 @@
 const token = localStorage.getItem('access_token');
 if (!token) window.location.href = '/login/';
 
-fetch('/api/admin/dashboard/', {
-    headers: { 'Authorization': `Bearer ${token}` }
-})
-.then(res => {
-    if (res.status === 403 || res.status === 401) {
-        alert("Acceso denegado: este panel es exclusivo para administradores.");
-        window.location.href = '/';
-        return;
-    }
-    return res.json();
-})
-.then(data => {
-    if (!data) return;
+fetch('/api/admin/dashboard/', { headers: { 'Authorization': `Bearer ${token}` } })
+    .then(res => {
+        if (!res.ok) {
+            alert("Acceso denegado: panel exclusivo de Gestores de Bodega.");
+            window.location.href = '/';
+            return null;
+        }
+        return res.json();
+    })
+    .then(d => {
+        if (!d) return;
+        document.getElementById('statReach').textContent = `${d.reach_percentage}%`;
+        document.getElementById('statReachDetail').textContent = `${d.carro_users_count} de ${d.total_instituciones} clinicas`;
+        document.getElementById('statRisk').textContent = `${d.tasa_riesgo_vencimiento}%`;
+        document.getElementById('statRiskDetail').textContent = `${d.vencimiento_proximo_count} de ${d.total_insumos} lotes`;
+        document.getElementById('statRecaudado').textContent = '$' + Number(d.total_recaudado).toLocaleString('es-CL');
+        document.getElementById('statCriticos').textContent = d.criticos_count;
 
-    // Métricas en números
-    document.getElementById('statReach').textContent = `${data.reach_percentage}%`;
-    document.getElementById('statReachDetail').textContent = `${data.active_carts_users} de ${data.total_users} usuarios`;
-    document.getElementById('statPotentialRev').textContent = '$' + Number(data.potential_revenue).toLocaleString('es-CL');
-    document.getElementById('statItemsInCart').textContent = `${data.total_items_in_carts} artículos en espera`;
-    document.getElementById('statInventoryValue').textContent = '$' + Number(data.total_inventory_value).toLocaleString('es-CL');
-    document.getElementById('statProductsCount').textContent = `${data.total_products} productos registrados`;
-    document.getElementById('statCritical').textContent = data.low_stock_count;
-
-    // Barra de progreso de alcance
-    const bar = document.getElementById('reachProgressBar');
-    bar.style.width = `${data.reach_percentage}%`;
-    document.getElementById('progressText').textContent = `${data.reach_percentage}%`;
-
-    // Tabla de stock bajo
-    const tbody = document.getElementById('criticalTableBody');
-    tbody.innerHTML = '';
-    if (!data.low_stock_items || data.low_stock_items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Todo el inventario cuenta con stock suficiente (&gt; 3 unidades).</td></tr>';
-        return;
-    }
-    data.low_stock_items.forEach(p => {
-        tbody.innerHTML += `
-            <tr>
-                <td class="fw-bold">#${p.id}</td>
-                <td>${p.name}</td>
-                <td><span class="badge bg-light text-dark border">${p.category_display}</span></td>
-                <td>$${Number(p.price).toLocaleString('es-CL')}</td>
-                <td><span class="badge ${p.stock === 0 ? 'bg-danger' : 'bg-warning text-dark'}">${p.stock} unidades</span></td>
-            </tr>
-        `;
+        const tbody = document.getElementById('criticosTableBody');
+        tbody.innerHTML = '';
+        if (!d.insumos_criticos || d.insumos_criticos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Todos los insumos cuentan con stock seguro.</td></tr>';
+            return;
+        }
+        d.insumos_criticos.forEach(it => {
+            tbody.innerHTML += `
+                <tr>
+                    <td class="fw-bold">${it.nombre_comercial}</td>
+                    <td>${it.principio_activo}</td>
+                    <td><code>${it.lote}</code></td>
+                    <td>${it.fecha_vencimiento}</td>
+                    <td><span class="badge bg-danger">${it.stock_cajas} cajas</span></td>
+                </tr>
+            `;
+        });
     });
-});
 </script>
 {% endblock %}

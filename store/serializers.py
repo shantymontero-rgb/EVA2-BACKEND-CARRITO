@@ -1,12 +1,10 @@
 ﻿"""
-SERIALIZADORES - SISTEMA B2B FARMACEUTICO
-Incluye Custom Claims en JWT (Rol y Perfil) y Serializadores de Insumos y Ordenes
+SERIALIZADORES - SISTEMA B2B FARMACEUTICO EN 3FN
 """
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Insumo, CarroItem, SolicitudAbastecimiento, SolicitudDetalle, UserProfile
+from .models import Insumo, CategoriaInsumo, CarroItem, SolicitudAbastecimiento, SolicitudDetalle, UserProfile
 
-# Custom JWT Token Serializer con Claims de Rol
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
@@ -28,15 +26,22 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+class CategoriaInsumoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CategoriaInsumo
+        fields = ['id', 'codigo', 'nombre', 'descripcion']
+
+
 class InsumoSerializer(serializers.ModelSerializer):
-    categoria_display = serializers.CharField(source='get_categoria_display', read_only=True)
+    categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
+    categoria_codigo = serializers.CharField(source='categoria.codigo', read_only=True)
 
     class Meta:
         model = Insumo
         fields = [
-            'id', 'nombre_comercial', 'principio_activo', 'lote', 
-            'fecha_vencimiento', 'categoria', 'categoria_display', 
-            'precio_caja', 'stock_cajas'
+            'id', 'categoria', 'categoria_codigo', 'categoria_nombre',
+            'nombre_comercial', 'principio_activo', 'lote', 
+            'fecha_vencimiento', 'precio_caja', 'stock_cajas'
         ]
 
 
@@ -65,6 +70,7 @@ class SolicitudAbastecimientoSerializer(serializers.ModelSerializer):
     detalles = SolicitudDetalleSerializer(many=True, read_only=True)
     estado_display = serializers.CharField(source='get_estado_display', read_only=True)
     cliente_username = serializers.CharField(source='user.username', read_only=True)
+    total = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True)
 
     class Meta:
         model = SolicitudAbastecimiento

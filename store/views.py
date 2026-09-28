@@ -1,6 +1,5 @@
 ﻿"""
-CONTROLADORES Y ENDPOINTS B2B - FARMACIA & INSUMOS MEDICOS
-Manejo de Stock Atomico, Roles RBAC, Edicion en Carro y Metricas B2B
+CONTROLADORES Y ENDPOINTS B2B - FARMACIA & INSUMOS MEDICOS (3FN)
 """
 from django.shortcuts import render
 from django.db import transaction
@@ -11,7 +10,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from datetime import date, timedelta
 from django.contrib.auth.models import User
 
-from .models import Insumo, Carro, CarroItem, SolicitudAbastecimiento, SolicitudDetalle
+from .models import Insumo, CategoriaInsumo, Carro, CarroItem, SolicitudAbastecimiento, SolicitudDetalle
 from .serializers import InsumoSerializer, CarroItemSerializer, SolicitudAbastecimientoSerializer
 
 def catalog_view(request):
@@ -35,12 +34,12 @@ class IsGestorBodega(permissions.BasePermission):
         return request.user.is_superuser or request.user.is_staff or (profile and profile.role == 'GESTOR_BODEGA')
 
 
-# 1. CATALOGO CON STOCK DINAMICO SEGUN LO RESERVADO EN EL CARRO
+# 1. CATALOGO CON FILTROS EN 3FN
 class InsumoListCreateAPI(generics.ListCreateAPIView):
-    queryset = Insumo.objects.all().order_by('nombre_comercial')
+    queryset = Insumo.objects.select_related('categoria').all().order_by('nombre_comercial')
     serializer_class = InsumoSerializer
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['categoria', 'lote']
+    filterset_fields = ['categoria__codigo', 'lote']
 
     def get_permissions(self):
         if self.request.method == 'GET':
@@ -48,21 +47,28 @@ class InsumoListCreateAPI(generics.ListCreateAPIView):
         return [IsGestorBodega()]
 
     def list(self, request, *args, **kwargs):
-        response = super().list(request, *args, **kwargs)
+        cat_param = request.query_params.get('categoria')
+        queryset = self.filter_queryset(self.get_queryset())
+        if cat_param:
+            queryset = queryset.filter(categoria__codigo=cat_param)
+
+        serializer = self.get_serializer(queryset, many=True)
+        data = list(serializer.data)
+
         user_cart = {}
         if request.user.is_authenticated:
             carro, _ = Carro.objects.get_or_create(user=request.user)
             for item in carro.items.all():
                 user_cart[item.insumo_id] = item.cantidad
 
-        for item_data in response.data:
+        for item_data in data:
             insumo_id = item_data['id']
             base_stock = item_data['stock_cajas']
             in_cart = user_cart.get(insumo_id, 0)
             item_data['in_cart'] = in_cart
             item_data['available_stock'] = max(0, base_stock - in_cart)
 
-        return response
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class InsumoDetailAPI(generics.RetrieveUpdateDestroyAPIView):
@@ -71,7 +77,7 @@ class InsumoDetailAPI(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsGestorBodega]
 
 
-# 2. CARRO DE INSUMOS CON EDICION Y CONTEO DE UNIDADES
+# 2. CARRO DE INSUMOS PERSISTENTE (1:1)
 class CarroInsumosAPI(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -105,7 +111,7 @@ class CarroInsumosAPI(APIView):
             return Response({'error': 'Insumo no encontrado'}, status=status.HTTP_404_NOT_FOUND)
 
         item, created = CarroItem.objects.get_or_create(carro=carro, insumo=insumo)
-        current_in_cart = 0 if created else (item.cantidad)
+        current_in_cart = 0 if created else item.cantidad
         total_solicitado = current_in_cart + cantidad
 
         if total_solicitado > insumo.stock_cajas:
@@ -125,7 +131,6 @@ class CarroInsumosAPI(APIView):
 class CarroItemDetailAPI(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    # PUT: Edicion interactiva de la cantidad de cajas en el carro
     def put(self, request, pk):
         try:
             item = CarroItem.objects.get(pk=pk, carro__user=request.user)
@@ -175,11 +180,9 @@ class ConfirmarSolicitudCheckoutAPI(APIView):
                     'error': f'Stock insuficiente para "{item.insumo.nombre_comercial}". Stock: {item.insumo.stock_cajas}'
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-        total_solicitud = sum(item.cantidad * item.insumo.precio_caja for item in items)
         solicitud = SolicitudAbastecimiento.objects.create(
             user=request.user,
-            estado='PAGADO',
-            total=total_solicitud
+            estado='PAGADO'
         )
 
         for item in items:
@@ -232,7 +235,7 @@ class CambiarEstadoSolicitudAPI(APIView):
         return Response({'message': f'Estado: {solicitud.get_estado_display()}', 'estado': solicitud.estado}, status=status.HTTP_200_OK)
 
 
-# 4. DASHBOARD CON NUEVA METRICA DE RIESGO DE VENCIMIENTO
+# 4. DASHBOARD DE BODEGA
 class BodegaDashboardStatsAPI(APIView):
     permission_classes = [IsGestorBodega]
 
@@ -241,13 +244,12 @@ class BodegaDashboardStatsAPI(APIView):
         total_insumos = insumos.count()
         insumos_criticos = insumos.filter(stock_cajas__lte=5)
         
-        # Nueva Metrica: Lotes con vencimiento menor a 1 ano (365 dias)
         fecha_umbral = date.today() + timedelta(days=365)
         insumos_vencimiento_proximo = insumos.filter(fecha_vencimiento__lte=fecha_umbral)
         tasa_riesgo_vencimiento = round((insumos_vencimiento_proximo.count() / total_insumos * 100), 1) if total_insumos > 0 else 0
 
-        solicitudes = SolicitudAbastecimiento.objects.all()
-        total_recaudado = sum(s.total for s in solicitudes.filter(estado__in=['PAGADO', 'ENTREGADO']))
+        solicitudes = SolicitudAbastecimiento.objects.filter(estado__in=['PAGADO', 'ENTREGADO'])
+        total_recaudado = sum(s.total for s in solicitudes)
         
         carro_items = CarroItem.objects.all()
         carro_users_count = carro_items.values('carro__user').distinct().count()
@@ -260,7 +262,7 @@ class BodegaDashboardStatsAPI(APIView):
             'insumos_criticos': InsumoSerializer(insumos_criticos, many=True).data,
             'vencimiento_proximo_count': insumos_vencimiento_proximo.count(),
             'tasa_riesgo_vencimiento': tasa_riesgo_vencimiento,
-            'total_solicitudes': solicitudes.count(),
+            'total_solicitudes': SolicitudAbastecimiento.objects.count(),
             'total_recaudado': total_recaudado,
             'reach_percentage': reach,
             'carro_users_count': carro_users_count,

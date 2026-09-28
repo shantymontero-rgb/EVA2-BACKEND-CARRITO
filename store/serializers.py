@@ -1,10 +1,8 @@
-﻿"""
-SERIALIZADORES - SISTEMA B2B FARMACEUTICO EN 3FN
-"""
-from rest_framework import serializers
+﻿from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import Insumo, CategoriaInsumo, CarroItem, SolicitudAbastecimiento, SolicitudDetalle, UserProfile
 
+# Agrega rol y usuario dentro de las claims del token JWT
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
@@ -26,12 +24,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+# Serializador de categoria
 class CategoriaInsumoSerializer(serializers.ModelSerializer):
     class Meta:
         model = CategoriaInsumo
         fields = ['id', 'codigo', 'nombre', 'descripcion']
 
 
+# Serializador de insumos con datos de categoria
 class InsumoSerializer(serializers.ModelSerializer):
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
     categoria_codigo = serializers.CharField(source='categoria.codigo', read_only=True)
@@ -45,6 +45,7 @@ class InsumoSerializer(serializers.ModelSerializer):
         ]
 
 
+# Serializador de items del carro con calculo de subtotal
 class CarroItemSerializer(serializers.ModelSerializer):
     insumo_nombre = serializers.CharField(source='insumo.nombre_comercial', read_only=True)
     principio_activo = serializers.CharField(source='insumo.principio_activo', read_only=True)
@@ -60,12 +61,14 @@ class CarroItemSerializer(serializers.ModelSerializer):
         return obj.cantidad * obj.insumo.precio_caja
 
 
+# Serializador para los detalles historicos de la orden
 class SolicitudDetalleSerializer(serializers.ModelSerializer):
     class Meta:
         model = SolicitudDetalle
         fields = ['id', 'insumo', 'nombre_historico', 'lote_historico', 'precio_unitario_historico', 'cantidad']
 
 
+# Serializador de la orden completa
 class SolicitudAbastecimientoSerializer(serializers.ModelSerializer):
     detalles = SolicitudDetalleSerializer(many=True, read_only=True)
     estado_display = serializers.CharField(source='get_estado_display', read_only=True)

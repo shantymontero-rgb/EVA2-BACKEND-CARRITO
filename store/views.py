@@ -1,7 +1,4 @@
-﻿"""
-CONTROLADORES Y ENDPOINTS B2B - FARMACIA & INSUMOS MEDICOS (3FN)
-"""
-from django.shortcuts import render
+﻿from django.shortcuts import render
 from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -13,6 +10,7 @@ from django.contrib.auth.models import User
 from .models import Insumo, CategoriaInsumo, Carro, CarroItem, SolicitudAbastecimiento, SolicitudDetalle
 from .serializers import InsumoSerializer, CarroItemSerializer, SolicitudAbastecimientoSerializer
 
+# Vistas de renderizado HTML
 def catalog_view(request):
     return render(request, 'store/catalog.html')
 
@@ -26,6 +24,7 @@ def dashboard_view(request):
     return render(request, 'store/dashboard.html')
 
 
+# Permiso exclusivo para Gestor de Bodega
 class IsGestorBodega(permissions.BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
@@ -34,7 +33,7 @@ class IsGestorBodega(permissions.BasePermission):
         return request.user.is_superuser or request.user.is_staff or (profile and profile.role == 'GESTOR_BODEGA')
 
 
-# 1. CATALOGO CON FILTROS EN 3FN
+# Catalogo publico con calculo de stock disponible
 class InsumoListCreateAPI(generics.ListCreateAPIView):
     queryset = Insumo.objects.select_related('categoria').all().order_by('nombre_comercial')
     serializer_class = InsumoSerializer
@@ -55,6 +54,7 @@ class InsumoListCreateAPI(generics.ListCreateAPIView):
         serializer = self.get_serializer(queryset, many=True)
         data = list(serializer.data)
 
+        # Descuenta visualmente lo que el usuario ya reservo en su carro
         user_cart = {}
         if request.user.is_authenticated:
             carro, _ = Carro.objects.get_or_create(user=request.user)
@@ -71,13 +71,14 @@ class InsumoListCreateAPI(generics.ListCreateAPIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
+# Detalle y modificacion de insumo (solo admin)
 class InsumoDetailAPI(generics.RetrieveUpdateDestroyAPIView):
     queryset = Insumo.objects.all()
     serializer_class = InsumoSerializer
     permission_classes = [IsGestorBodega]
 
 
-# 2. CARRO DE INSUMOS PERSISTENTE (1:1)
+# Manejo del carro de compras (obtener items y agregar)
 class CarroInsumosAPI(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -98,6 +99,7 @@ class CarroInsumosAPI(APIView):
         }, status=status.HTTP_200_OK)
 
     def post(self, request):
+        # Valida cantidad y existencia sin descontar de la bodega todavia
         carro = self.get_carro(request.user)
         insumo_id = request.data.get('insumo')
         try:
@@ -128,6 +130,7 @@ class CarroInsumosAPI(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+# Modificar cantidad o eliminar un item especifico del carro
 class CarroItemDetailAPI(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -147,11 +150,11 @@ class CarroItemDetailAPI(APIView):
             return Response({'message': 'Item eliminado del carro'}, status=status.HTTP_200_OK)
 
         if new_qty > item.insumo.stock_cajas:
-            return Response({'error': f'Supera el stock fisico en bodega ({item.insumo.stock_cajas} disp.)'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'Supera el stock fisico ({item.insumo.stock_cajas} disp.)'}, status=status.HTTP_400_BAD_REQUEST)
 
         item.cantidad = new_qty
         item.save()
-        return Response({'message': 'Cantidad actualizada con exito'}, status=status.HTTP_200_OK)
+        return Response({'message': 'Cantidad actualizada'}, status=status.HTTP_200_OK)
 
     def delete(self, request, pk):
         try:
@@ -162,7 +165,7 @@ class CarroItemDetailAPI(APIView):
             return Response({'error': 'Item no encontrado'}, status=status.HTTP_404_NOT_FOUND)
 
 
-# 3. CHECKOUT ATOMICO Y TRANSACCION
+# Checkout: descuento atomico de stock al confirmar el pago
 class ConfirmarSolicitudCheckoutAPI(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -174,17 +177,20 @@ class ConfirmarSolicitudCheckoutAPI(APIView):
         if not items:
             return Response({'error': 'La solicitud esta vacia'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Valida que todos tengan stock antes de proceder
         for item in items:
             if item.insumo.stock_cajas < item.cantidad:
                 return Response({
                     'error': f'Stock insuficiente para "{item.insumo.nombre_comercial}". Stock: {item.insumo.stock_cajas}'
                 }, status=status.HTTP_400_BAD_REQUEST)
 
+        # Crea orden en estado PAGADO
         solicitud = SolicitudAbastecimiento.objects.create(
             user=request.user,
             estado='PAGADO'
         )
 
+        # Guarda snapshot historico y descuenta inventario
         for item in items:
             SolicitudDetalle.objects.create(
                 solicitud=solicitud,
@@ -199,9 +205,10 @@ class ConfirmarSolicitudCheckoutAPI(APIView):
 
         carro.items.all().delete()
         serializer = SolicitudAbastecimientoSerializer(solicitud)
-        return Response({'message': 'Solicitud pagada y procesada.', 'solicitud': serializer.data}, status=status.HTTP_201_CREATED)
+        return Response({'message': 'Solicitud procesada con exito.', 'solicitud': serializer.data}, status=status.HTTP_201_CREATED)
 
 
+# Historial de compras del usuario autenticado
 class MisSolicitudesAPI(generics.ListAPIView):
     serializer_class = SolicitudAbastecimientoSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -210,6 +217,7 @@ class MisSolicitudesAPI(generics.ListAPIView):
         return SolicitudAbastecimiento.objects.filter(user=self.request.user).order_by('-created_at')
 
 
+# Cambio de estado de orden y reposicion automatica ante CANCELADO
 class CambiarEstadoSolicitudAPI(APIView):
     permission_classes = [IsGestorBodega]
 
@@ -224,6 +232,7 @@ class CambiarEstadoSolicitudAPI(APIView):
         if nuevo_estado not in dict(SolicitudAbastecimiento.ESTADO_CHOICES):
             return Response({'error': 'Estado invalido'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Si se cancela una orden pagada, se devuelve el stock a bodega
         if nuevo_estado == 'CANCELADO' and solicitud.estado == 'PAGADO':
             for det in solicitud.detalles.select_related('insumo').all():
                 insumo = det.insumo
@@ -235,7 +244,7 @@ class CambiarEstadoSolicitudAPI(APIView):
         return Response({'message': f'Estado: {solicitud.get_estado_display()}', 'estado': solicitud.estado}, status=status.HTTP_200_OK)
 
 
-# 4. DASHBOARD DE BODEGA
+# Metricas del dashboard: riesgo de vencimiento, stock critico, recaudacion y alcance
 class BodegaDashboardStatsAPI(APIView):
     permission_classes = [IsGestorBodega]
 
@@ -244,17 +253,20 @@ class BodegaDashboardStatsAPI(APIView):
         total_insumos = insumos.count()
         insumos_criticos = insumos.filter(stock_cajas__lte=5)
         
+        # Metrica: insumos con vencimiento a menos de 1 ano
         fecha_umbral = date.today() + timedelta(days=365)
         insumos_vencimiento_proximo = insumos.filter(fecha_vencimiento__lte=fecha_umbral)
         tasa_riesgo_vencimiento = round((insumos_vencimiento_proximo.count() / total_insumos * 100), 1) if total_insumos > 0 else 0
 
+        # Total recaudado en ordenes pagadas o entregadas
         solicitudes = SolicitudAbastecimiento.objects.filter(estado__in=['PAGADO', 'ENTREGADO'])
         total_recaudado = sum(s.total for s in solicitudes)
         
+        # Metrica: alcance de clientes con carros activos
         carro_items = CarroItem.objects.all()
         carro_users_count = carro_items.values('carro__user').distinct().count()
-        total_medicos = User.objects.filter(profile__role='INSTITUCION_MEDICA').count()
-        reach = round((carro_users_count / total_medicos * 100), 1) if total_medicos > 0 else 0
+        total_clientes = User.objects.filter(profile__role='INSTITUCION_MEDICA').count()
+        reach = round((carro_users_count / total_clientes * 100), 1) if total_clientes > 0 else 0
 
         return Response({
             'total_insumos': total_insumos,
@@ -266,5 +278,5 @@ class BodegaDashboardStatsAPI(APIView):
             'total_recaudado': total_recaudado,
             'reach_percentage': reach,
             'carro_users_count': carro_users_count,
-            'total_instituciones': total_medicos
+            'total_instituciones': total_clientes
         }, status=status.HTTP_200_OK)

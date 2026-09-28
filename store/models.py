@@ -1,16 +1,12 @@
-﻿"""
-MODULO DE MODELOS - SISTEMA B2B FARMACEUTICO Y MEDICO
-Normalizacion en Tercera Forma Normal (3FN), CHOICES y Transaccionalidad
-"""
-from django.db import models
+﻿from django.db import models
 from django.contrib.auth.models import User
 import uuid
 
-# --- 1FN/2FN/3FN: Perfil de Usuario (Extension 1:1 de Auth User) ---
+# Perfil para asignar roles (GESTOR_BODEGA o INSTITUCION_MEDICA)
 class UserProfile(models.Model):
     ROLE_CHOICES = [
-        ('INSTITUCION_MEDICA', 'Institucion Medica / Comprador'),
-        ('GESTOR_BODEGA', 'Gestor de Bodega Farmaceutica'),
+        ('INSTITUCION_MEDICA', 'Institución Médica / Comprador'),
+        ('GESTOR_BODEGA', 'Gestor de Bodega (Admin)'),
     ]
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=30, choices=ROLE_CHOICES, default='INSTITUCION_MEDICA')
@@ -20,7 +16,7 @@ class UserProfile(models.Model):
         return f"{self.user.username} - {self.get_role_display()}"
 
 
-# --- Normalizacion 3FN: Tabla independiente para evitar dependencias transitivas ---
+# Categoria aislada para cumplir 3FN (evita dependencias transitivas)
 class CategoriaInsumo(models.Model):
     codigo = models.CharField(max_length=20, unique=True)
     nombre = models.CharField(max_length=100)
@@ -30,7 +26,7 @@ class CategoriaInsumo(models.Model):
         return self.nombre
 
 
-# --- Insumos Farmaceuticos (Dependencia funcional directa de PK 'id') ---
+# Catalogo de insumos medicos con control de stock y lote
 class Insumo(models.Model):
     categoria = models.ForeignKey(CategoriaInsumo, on_delete=models.PROTECT, related_name='insumos')
     nombre_comercial = models.CharField(max_length=180)
@@ -41,10 +37,10 @@ class Insumo(models.Model):
     stock_cajas = models.PositiveIntegerField(default=0)
 
     def __str__(self):
-        return f"{self.nombre_comercial} (Lote: {self.lote}) - Stock: {self.stock_cajas}"
+        return f"{self.nombre_comercial} (Lote: {self.lote})"
 
 
-# --- Carro Persistente (Relacion 1:1 con Usuario) ---
+# Carro persistente vinculado 1:1 con el usuario
 class Carro(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='carro_activo')
     updated_at = models.DateTimeField(auto_now=True)
@@ -53,7 +49,7 @@ class Carro(models.Model):
         return f"Carro de {self.user.username}"
 
 
-# --- Items del Carro (Clave Compuesta Conceptual carro + insumo) ---
+# Items dentro del carro (relacion carro e insumo)
 class CarroItem(models.Model):
     carro = models.ForeignKey(Carro, on_delete=models.CASCADE, related_name='items')
     insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE)
@@ -62,17 +58,14 @@ class CarroItem(models.Model):
     class Meta:
         unique_together = ('carro', 'insumo')
 
-    def __str__(self):
-        return f"{self.cantidad} cajas de {self.insumo.nombre_comercial}"
 
-
-# --- Orden Historica (Transaccion) ---
+# Orden historica de compra y ciclo de vida de la transaccion
 class SolicitudAbastecimiento(models.Model):
     ESTADO_CHOICES = [
-        ('PENDIENTE', 'Pendiente de Validacion'),
+        ('PENDIENTE', 'Pendiente de Validación'),
         ('PAGADO', 'Pagado y Autorizado'),
-        ('ENTREGADO', 'Entregado en Clinica'),
-        ('CANCELADO', 'Cancelado / Quiebre Frio'),
+        ('ENTREGADO', 'Entregado en Clínica'),
+        ('CANCELADO', 'Cancelado / Quiebre Frío'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -81,16 +74,16 @@ class SolicitudAbastecimiento(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Calculo dinamico para no duplicar datos (3FN)
     @property
     def total(self):
-        """Calculo derivado en tiempo real sin violar 3FN"""
         return sum(d.cantidad * d.precio_unitario_historico for d in self.detalles.all())
 
     def __str__(self):
-        return f"Solicitud {str(self.id)[:8]} - {self.user.username} ({self.get_estado_display()})"
+        return f"Orden {str(self.id)[:8]} ({self.get_estado_display()})"
 
 
-# --- Detalle de Transaccion (Lineas de la Orden) ---
+# Detalle inmutable de la compra (guarda precio y lote historico)
 class SolicitudDetalle(models.Model):
     solicitud = models.ForeignKey(SolicitudAbastecimiento, on_delete=models.CASCADE, related_name='detalles')
     insumo = models.ForeignKey(Insumo, on_delete=models.PROTECT)
@@ -98,6 +91,3 @@ class SolicitudDetalle(models.Model):
     lote_historico = models.CharField(max_length=60)
     precio_unitario_historico = models.DecimalField(max_digits=12, decimal_places=0)
     cantidad = models.PositiveIntegerField()
-
-    def __str__(self):
-        return f"{self.cantidad}x {self.nombre_historico} en orden {str(self.solicitud.id)[:8]}"

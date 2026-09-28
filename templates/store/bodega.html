@@ -1,11 +1,11 @@
 ﻿{% extends 'store/base.html' %}
-{% block title %}Panel Gestor de Bodega{% endblock %}
+{% block title %}Control de Abastecimiento y Bodega{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
     <div>
         <span class="badge bg-danger mb-1">Acceso Gestor de Bodega</span>
-        <h2 class="fw-bold text-dark">Panel de Abastecimiento y Control Clinico</h2>
+        <h2 class="fw-bold text-dark">Gestion de Abastecimiento y Control de Bodega</h2>
         <p class="text-muted mb-0">KPIs de rotacion, riesgo de caducidad y alcance hospitalario.</p>
     </div>
     <a href="/" class="btn btn-outline-primary rounded-pill px-3">Ir a Insumos</a>
@@ -104,3 +104,4 @@ fetch('/api/admin/dashboard/', { headers: { 'Authorization': `Bearer ${token}` }
     });
 </script>
 {% endblock %}
+

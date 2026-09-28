@@ -20,8 +20,8 @@ def cart_view(request):
 def login_view(request):
     return render(request, 'store/login.html')
 
-def dashboard_view(request):
-    return render(request, 'store/dashboard.html')
+def bodega_view(request):
+    return render(request, 'store/bodega.html')
 
 
 # Permiso exclusivo para Gestor de Bodega
@@ -280,3 +280,4 @@ class BodegaDashboardStatsAPI(APIView):
             'carro_users_count': carro_users_count,
             'total_instituciones': total_clientes
         }, status=status.HTTP_200_OK)
+

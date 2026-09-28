@@ -17,7 +17,7 @@ class CustomTokenView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
 from store.views import (
-    catalog_view, cart_view, login_view, dashboard_view,
+    catalog_view, cart_view, login_view, bodega_view,
     InsumoListCreateAPI, InsumoDetailAPI,
     CarroInsumosAPI, CarroItemDetailAPI,
     ConfirmarSolicitudCheckoutAPI, MisSolicitudesAPI,
@@ -41,7 +41,7 @@ urlpatterns = [
     path('', catalog_view, name='home'),
     path('carro/', cart_view, name='cart_view'),
     path('login/', login_view, name='login_view'),
-    path('dashboard/', dashboard_view, name='dashboard_view'),
+    path('dashboard/', bodega_view, name='dashboard_view'),
 
     # Autenticacion JWT con Claims de Rol
     path('api/token/', CustomTokenView.as_view(), name='token_obtain_pair'),
@@ -69,3 +69,4 @@ urlpatterns = [
     # re_path para eliminar error 404 (Requerimiento de Catedra)
     re_path(r'^.*$', lambda request: redirect('/')),
 ]
+

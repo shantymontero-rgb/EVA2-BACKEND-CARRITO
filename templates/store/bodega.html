@@ -5,8 +5,8 @@
 <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
     <div>
         <span class="badge bg-danger mb-1">Acceso Gestor de Bodega</span>
-        <h2 class="fw-bold text-dark">Gestion de Abastecimiento y Control de Bodega</h2>
-        <p class="text-muted mb-0">KPIs de rotacion, riesgo de caducidad y alcance hospitalario.</p>
+        <h2 class="fw-bold text-dark">Gestión de Abastecimiento y Control de Bodega</h2>
+        <p class="text-muted mb-0">KPIs de rotación, riesgo de caducidad y alcance hospitalario.</p>
     </div>
     <a href="/" class="btn btn-outline-primary rounded-pill px-3">Ir a Insumos</a>
 </div>
@@ -16,26 +16,26 @@
         <div class="card card-med p-3 text-center">
             <small class="text-muted text-uppercase fw-semibold">Alcance Institucional</small>
             <h3 class="fw-bold text-primary mt-2 mb-0" id="statReach">0%</h3>
-            <small class="text-muted" id="statReachDetail">0 clinicas activas</small>
+            <small class="text-muted" id="statReachDetail">0 clientes activos</small>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card card-med p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Riesgo Caducidad (&lt;1 ano)</small>
+            <small class="text-muted text-uppercase fw-semibold">Riesgo Caducidad (&lt;1 año)</small>
             <h3 class="fw-bold text-warning mt-2 mb-0" id="statRisk">0%</h3>
-            <small class="text-muted" id="statRiskDetail">0 lotes proximos</small>
+            <small class="text-muted" id="statRiskDetail">0 lotes próximos</small>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card card-med p-3 text-center">
             <small class="text-muted text-uppercase fw-semibold">Total Recaudado</small>
             <h3 class="fw-bold text-success mt-2 mb-0" id="statRecaudado">$0</h3>
-            <small class="text-muted">Ordenes pagadas</small>
+            <small class="text-muted">Órdenes pagadas</small>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card card-med p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Stock Critico (&le; 5)</small>
+            <small class="text-muted text-uppercase fw-semibold">Stock Crítico (&le; 5)</small>
             <h3 class="fw-bold text-danger mt-2 mb-0" id="statCriticos">0</h3>
             <small class="text-danger">Riesgo de quiebre</small>
         </div>
@@ -64,44 +64,48 @@
 {% block extra_js %}
 <script>
 const token = localStorage.getItem('access_token');
-if (!token) window.location.href = '/login/';
+if (!token) {
+    window.location.href = '/login/';
+}
 
-fetch('/api/admin/dashboard/', { headers: { 'Authorization': `Bearer ${token}` } })
-    .then(res => {
-        if (!res.ok) {
-            alert("Acceso denegado: panel exclusivo de Gestores de Bodega.");
-            window.location.href = '/';
-            return null;
-        }
-        return res.json();
-    })
-    .then(d => {
-        if (!d) return;
-        document.getElementById('statReach').textContent = `${d.reach_percentage}%`;
-        document.getElementById('statReachDetail').textContent = `${d.carro_users_count} de ${d.total_instituciones} clinicas`;
-        document.getElementById('statRisk').textContent = `${d.tasa_riesgo_vencimiento}%`;
-        document.getElementById('statRiskDetail').textContent = `${d.vencimiento_proximo_count} de ${d.total_insumos} lotes`;
-        document.getElementById('statRecaudado').textContent = '$' + Number(d.total_recaudado).toLocaleString('es-CL');
-        document.getElementById('statCriticos').textContent = d.criticos_count;
+fetch('/api/admin/dashboard/', { 
+    headers: { 'Authorization': `Bearer ${token}` } 
+})
+.then(res => {
+    if (res.status === 401 || res.status === 403) {
+        alert("Acceso denegado: este panel es exclusivo para Gestores de Bodega (Admin). Inicie sesión con la cuenta correspondiente.");
+        window.location.href = '/login/';
+        return null;
+    }
+    return res.json();
+})
+.then(d => {
+    if (!d) return;
+    document.getElementById('statReach').textContent = `${d.reach_percentage}%`;
+    document.getElementById('statReachDetail').textContent = `${d.carro_users_count} de ${d.total_instituciones} clientes`;
+    document.getElementById('statRisk').textContent = `${d.tasa_riesgo_vencimiento}%`;
+    document.getElementById('statRiskDetail').textContent = `${d.vencimiento_proximo_count} de ${d.total_insumos} lotes`;
+    document.getElementById('statRecaudado').textContent = '$' + Number(d.total_recaudado).toLocaleString('es-CL');
+    document.getElementById('statCriticos').textContent = d.criticos_count;
 
-        const tbody = document.getElementById('criticosTableBody');
-        tbody.innerHTML = '';
-        if (!d.insumos_criticos || d.insumos_criticos.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Todos los insumos cuentan con stock seguro.</td></tr>';
-            return;
-        }
-        d.insumos_criticos.forEach(it => {
-            tbody.innerHTML += `
-                <tr>
-                    <td class="fw-bold">${it.nombre_comercial}</td>
-                    <td>${it.principio_activo}</td>
-                    <td><code>${it.lote}</code></td>
-                    <td>${it.fecha_vencimiento}</td>
-                    <td><span class="badge bg-danger">${it.stock_cajas} cajas</span></td>
-                </tr>
-            `;
-        });
+    const tbody = document.getElementById('criticosTableBody');
+    tbody.innerHTML = '';
+    if (!d.insumos_criticos || d.insumos_criticos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Todos los insumos cuentan con stock seguro.</td></tr>';
+        return;
+    }
+    d.insumos_criticos.forEach(it => {
+        tbody.innerHTML += `
+            <tr>
+                <td class="fw-bold">${it.nombre_comercial}</td>
+                <td>${it.principio_activo}</td>
+                <td><code>${it.lote}</code></td>
+                <td>${it.fecha_vencimiento}</td>
+                <td><span class="badge bg-danger">${it.stock_cajas} cajas</span></td>
+            </tr>
+        `;
     });
+})
+.catch(err => console.error("Error al cargar métricas:", err));
 </script>
 {% endblock %}
-

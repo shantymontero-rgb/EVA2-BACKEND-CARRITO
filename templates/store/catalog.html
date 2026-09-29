@@ -1,94 +1,59 @@
 ﻿{% extends 'store/base.html' %}
-{% block title %}Catalogo de Insumos Clinicos{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
-    <div>
-        <span class="badge bg-primary mb-1">Abastecimiento Hospitalario</span>
-        <h2 class="fw-bold text-dark">Catalogo de Insumos y Farmacos</h2>
-        <p class="text-muted mb-0">Seleccione los lotes e insumos requeridos por su institucion de salud.</p>
-    </div>
-    <div>
-        <select id="filterCat" class="form-select border-0 shadow-sm" onchange="loadInsumos(this.value)">
-            <option value="">Todas las Categorias</option>
-            <option value="MEDICAMENTO">Medicamentos & Farmacos</option>
-            <option value="QUIRURGICO">Material Quirurgico</option>
-            <option value="EQUIPAMIENTO">Equipamiento Clinico</option>
-        </select>
-    </div>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h2 class="fw-bold mb-1">Catálogo de Insumos Médicos</h2>
+    <p class="text-muted mb-0">Disponibilidad de lotes para pedidos institucionales y hospitalarios.</p>
+  </div>
+  <div>
+    <a href="/cart/" class="btn btn-primary rounded-pill px-4">
+      <i class="bi bi-cart-fill me-1"></i> Ver Carro ({{ carro_count }})
+    </a>
+  </div>
 </div>
 
-<div class="row g-4" id="insumosGrid"></div>
-{% endblock %}
+<div class="row g-4">
+  {% for insumo in insumos %}
+  <div class="col-md-4">
+    <div class="card h-100 shadow-sm border-0 rounded-4 p-2">
+      <div class="card-body d-flex flex-column">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="badge bg-secondary rounded-pill px-3">{{ insumo.categoria.nombre }}</span>
+          <span class="badge {% if insumo.stock_cajas <= 5 %}bg-danger{% else %}bg-success{% endif %} rounded-pill px-3">
+            {{ insumo.stock_cajas }} cajas
+          </span>
+        </div>
+        <h5 class="card-title fw-bold text-dark mt-2 mb-1">{{ insumo.nombre_comercial }}</h5>
+        <p class="card-text text-muted small mb-2"><strong>Principio:</strong> {{ insumo.principio_activo }}</p>
+        <div class="small text-muted mb-3">
+          <div><i class="bi bi-upc-scan"></i> <strong>Lote:</strong> {{ insumo.lote }}</div>
+          <div><i class="bi bi-calendar-event"></i> <strong>Vence:</strong> {{ insumo.fecha_vencimiento }}</div>
+        </div>
 
-{% block extra_js %}
-<script>
-function loadInsumos(cat = '') {
-    let url = '/api/insumos/';
-    if (cat) url += `?categoria=${cat}`;
-
-    fetch(url)
-        .then(res => res.json())
-        .then(data => {
-            const grid = document.getElementById('insumosGrid');
-            grid.innerHTML = '';
-            if (!data || data.length === 0) {
-                grid.innerHTML = '<div class="col-12 text-center text-muted py-5">No hay insumos disponibles.</div>';
-                return;
-            }
-            data.forEach(item => {
-                grid.innerHTML += `
-                    <div class="col-md-4 col-lg-3">
-                        <div class="card card-med h-100 p-3 d-flex flex-column justify-content-between">
-                            <div>
-                                <span class="badge bg-light text-primary border mb-2">${item.categoria_nombre}</span>
-                                <h5 class="fw-bold mb-1">${item.nombre_comercial}</h5>
-                                <p class="text-muted small mb-2">Principio: ${item.principio_activo || 'N/A'}</p>
-                                <div class="small bg-light p-2 rounded mb-2">
-                                    <div><strong>Lote:</strong> <code>${item.lote}</code></div>
-                                    <div><strong>Vencimiento:</strong> ${item.fecha_vencimiento}</div>
-                                </div>
-                            </div>
-                            <div class="pt-2 border-top">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="fs-5 fw-bold text-success">$${Number(item.precio_caja).toLocaleString('es-CL')} /caja</span>
-                                    <span class="badge ${item.stock_cajas <= 5 ? 'bg-danger' : 'bg-light text-dark border'}">${item.stock_cajas} cajas disp.</span>
-                                </div>
-                                <div class="d-flex gap-2">
-                                    <input type="number" id="qty-${item.id}" class="form-control form-control-sm text-center" value="1" min="1" max="${item.stock_cajas}" style="max-width: 70px;">
-                                    <button class="btn btn-primary btn-sm flex-grow-1" onclick="addToCart(${item.id})">
-                                        <i class="bi bi-cart-plus me-1"></i> Pedir
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-        });
-}
-
-function addToCart(insumoId) {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-        alert("Debe iniciar sesion como Institucion Medica para realizar pedidos.");
-        window.location.href = '/login/';
-        return;
-    }
-    const qty = document.getElementById(`qty-${insumoId}`).value;
-    fetch('/api/carro-insumos/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ insumo: insumoId, cantidad: parseInt(qty) })
-    })
-    .then(async res => {
-        const d = await res.json();
-        if (!res.ok) throw new Error(d.error || 'Error al agregar');
-        alert("Insumo reservado en su carro de compras.");
-    })
-    .catch(err => alert(err.message));
-}
-
-loadInsumos();
-</script>
+        <div class="mt-auto pt-3 border-top">
+          <form method="POST" action="{% url 'add_to_cart' insumo.id %}" class="d-flex align-items-center justify-content-between gap-2">
+            {% csrf_token %}
+            <span class="fs-5 fw-bold text-primary">${{ insumo.precio_caja }}</span>
+            {% if insumo.stock_cajas > 0 %}
+              <div class="d-flex align-items-center gap-1">
+                <input type="number" name="cantidad" value="1" min="1" max="{{ insumo.stock_cajas }}" class="form-control form-control-sm text-center" style="width: 65px;" required>
+                <button type="submit" class="btn btn-outline-primary btn-sm rounded-pill px-3">
+                  + Agregar
+                </button>
+              </div>
+            {% else %}
+              <button class="btn btn-secondary btn-sm rounded-pill px-3" disabled>Agotado</button>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="col-12 text-center py-5">
+    <p class="text-muted fs-5">No hay insumos disponibles.</p>
+  </div>
+  {% endfor %}
+</div>
 {% endblock %}

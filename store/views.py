@@ -1,283 +1,230 @@
-﻿from django.shortcuts import render
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
+from django.contrib import messages
 from django.db import transaction
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status, permissions, generics
-from django_filters.rest_framework import DjangoFilterBackend
-from datetime import date, timedelta
-from django.contrib.auth.models import User
 
-from .models import Insumo, CategoriaInsumo, Carro, CarroItem, SolicitudAbastecimiento, SolicitudDetalle
-from .serializers import InsumoSerializer, CarroItemSerializer, SolicitudAbastecimientoSerializer
+from .models import Insumo, CategoriaInsumo, Carro, CarroItem, SolicitudAbastecimiento, SolicitudDetalle, UserProfile
 
-# Vistas de renderizado HTML
+# Helper: verifica si el usuario es administrador / gestor de bodega
+def is_admin_user(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    profile = getattr(user, 'profile', None)
+    return profile and profile.role == 'GESTOR_BODEGA'
+
+# 1. Catálogo principal
 def catalog_view(request):
-    return render(request, 'store/catalog.html')
-
-def cart_view(request):
-    return render(request, 'store/cart.html')
-
-def login_view(request):
-    return render(request, 'store/login.html')
-
-def bodega_view(request):
-    return render(request, 'store/bodega.html')
-
-
-# Permiso exclusivo para Gestor de Bodega
-class IsGestorBodega(permissions.BasePermission):
-    def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
-            return False
-        profile = getattr(request.user, 'profile', None)
-        return request.user.is_superuser or request.user.is_staff or (profile and profile.role == 'GESTOR_BODEGA')
-
-
-# Catalogo publico con calculo de stock disponible
-class InsumoListCreateAPI(generics.ListCreateAPIView):
-    queryset = Insumo.objects.select_related('categoria').all().order_by('nombre_comercial')
-    serializer_class = InsumoSerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['categoria__codigo', 'lote']
-
-    def get_permissions(self):
-        if self.request.method == 'GET':
-            return [permissions.AllowAny()]
-        return [IsGestorBodega()]
-
-    def list(self, request, *args, **kwargs):
-        cat_param = request.query_params.get('categoria')
-        queryset = self.filter_queryset(self.get_queryset())
-        if cat_param:
-            queryset = queryset.filter(categoria__codigo=cat_param)
-
-        serializer = self.get_serializer(queryset, many=True)
-        data = list(serializer.data)
-
-        # Descuenta visualmente lo que el usuario ya reservo en su carro
-        user_cart = {}
-        if request.user.is_authenticated:
-            carro, _ = Carro.objects.get_or_create(user=request.user)
-            for item in carro.items.all():
-                user_cart[item.insumo_id] = item.cantidad
-
-        for item_data in data:
-            insumo_id = item_data['id']
-            base_stock = item_data['stock_cajas']
-            in_cart = user_cart.get(insumo_id, 0)
-            item_data['in_cart'] = in_cart
-            item_data['available_stock'] = max(0, base_stock - in_cart)
-
-        return Response(data, status=status.HTTP_200_OK)
-
-
-# Detalle y modificacion de insumo (solo admin)
-class InsumoDetailAPI(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Insumo.objects.all()
-    serializer_class = InsumoSerializer
-    permission_classes = [IsGestorBodega]
-
-
-# Manejo del carro de compras (obtener items y agregar)
-class CarroInsumosAPI(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_carro(self, user):
-        carro, _ = Carro.objects.get_or_create(user=user)
-        return carro
-
-    def get(self, request):
-        carro = self.get_carro(request.user)
-        items = carro.items.select_related('insumo').all()
-        serializer = CarroItemSerializer(items, many=True)
-        total = sum(item.cantidad * item.insumo.precio_caja for item in items)
-        total_items_count = sum(item.cantidad for item in items)
-        return Response({
-            'items': serializer.data,
-            'total_items_count': total_items_count,
-            'monto_total': total
-        }, status=status.HTTP_200_OK)
-
-    def post(self, request):
-        # Valida cantidad y existencia sin descontar de la bodega todavia
-        carro = self.get_carro(request.user)
-        insumo_id = request.data.get('insumo')
-        try:
-            cantidad = int(request.data.get('cantidad', 1))
-        except (ValueError, TypeError):
-            return Response({'error': 'Cantidad no valida'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            insumo = Insumo.objects.get(id=insumo_id)
-        except Insumo.DoesNotExist:
-            return Response({'error': 'Insumo no encontrado'}, status=status.HTTP_404_NOT_FOUND)
-
-        item, created = CarroItem.objects.get_or_create(carro=carro, insumo=insumo)
-        current_in_cart = 0 if created else item.cantidad
-        total_solicitado = current_in_cart + cantidad
-
-        if total_solicitado > insumo.stock_cajas:
-            disp = max(0, insumo.stock_cajas - current_in_cart)
-            return Response({'error': f'Stock insuficiente. Disponibles: {disp}. Ya tienes {current_in_cart} en el carro.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        item.cantidad = total_solicitado
-        item.save()
-
-        total_items = sum(i.cantidad for i in carro.items.all())
-        return Response({
-            'message': f'Insumo reservado. Tienes {item.cantidad} cajas de este insumo.',
-            'total_items_count': total_items
-        }, status=status.HTTP_201_CREATED)
-
-
-# Modificar cantidad o eliminar un item especifico del carro
-class CarroItemDetailAPI(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def put(self, request, pk):
-        try:
-            item = CarroItem.objects.get(pk=pk, carro__user=request.user)
-        except CarroItem.DoesNotExist:
-            return Response({'error': 'Item no encontrado'}, status=status.HTTP_404_NOT_FOUND)
-
-        try:
-            new_qty = int(request.data.get('cantidad', 1))
-        except (ValueError, TypeError):
-            return Response({'error': 'Cantidad no valida'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if new_qty <= 0:
-            item.delete()
-            return Response({'message': 'Item eliminado del carro'}, status=status.HTTP_200_OK)
-
-        if new_qty > item.insumo.stock_cajas:
-            return Response({'error': f'Supera el stock fisico ({item.insumo.stock_cajas} disp.)'}, status=status.HTTP_400_BAD_REQUEST)
-
-        item.cantidad = new_qty
-        item.save()
-        return Response({'message': 'Cantidad actualizada'}, status=status.HTTP_200_OK)
-
-    def delete(self, request, pk):
-        try:
-            item = CarroItem.objects.get(pk=pk, carro__user=request.user)
-            item.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except CarroItem.DoesNotExist:
-            return Response({'error': 'Item no encontrado'}, status=status.HTTP_404_NOT_FOUND)
-
-
-# Checkout: descuento atomico de stock al confirmar el pago
-class ConfirmarSolicitudCheckoutAPI(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    @transaction.atomic
-    def post(self, request):
+    insumos = Insumo.objects.all().select_related('categoria').order_by('id')
+    categorias = CategoriaInsumo.objects.all()
+    carro_count = 0
+    if request.user.is_authenticated:
         carro, _ = Carro.objects.get_or_create(user=request.user)
-        items = list(carro.items.select_related('insumo').select_for_update().all())
+        carro_count = sum(item.cantidad for item in carro.items.all())
+    return render(request, 'store/catalog.html', {
+        'insumos': insumos,
+        'categorias': categorias,
+        'carro_count': carro_count,
+        'is_admin': is_admin_user(request.user)
+    })
 
-        if not items:
-            return Response({'error': 'La solicitud esta vacia'}, status=status.HTTP_400_BAD_REQUEST)
+# 2. Ver Carrito
+def cart_view(request):
+    if not request.user.is_authenticated:
+        return redirect('login')
+    carro, _ = Carro.objects.get_or_create(user=request.user)
+    items = carro.items.select_related('insumo').all()
+    total = sum(item.cantidad * item.insumo.precio_caja for item in items)
+    return render(request, 'store/cart.html', {
+        'items': items,
+        'total': total,
+        'is_admin': is_admin_user(request.user)
+    })
 
-        # Valida que todos tengan stock antes de proceder
-        for item in items:
-            if item.insumo.stock_cajas < item.cantidad:
-                return Response({
-                    'error': f'Stock insuficiente para "{item.insumo.nombre_comercial}". Stock: {item.insumo.stock_cajas}'
-                }, status=status.HTTP_400_BAD_REQUEST)
+# 3. Agregar al Carrito (soporta cantidad elegida)
+def add_to_cart_view(request, insumo_id):
+    if not request.user.is_authenticated:
+        return redirect('login')
+    insumo = get_object_or_404(Insumo, id=insumo_id)
+    
+    try:
+        cantidad = int(request.POST.get('cantidad', 1))
+        if cantidad < 1:
+            cantidad = 1
+    except (ValueError, TypeError):
+        cantidad = 1
 
-        # Crea orden en estado PAGADO
-        solicitud = SolicitudAbastecimiento.objects.create(
-            user=request.user,
-            estado='PAGADO'
+    carro, _ = Carro.objects.get_or_create(user=request.user)
+    item, created = CarroItem.objects.get_or_create(carro=carro, insumo=insumo)
+    
+    if created:
+        item.cantidad = min(cantidad, insumo.stock_cajas)
+    else:
+        item.cantidad = min(item.cantidad + cantidad, insumo.stock_cajas)
+    item.save()
+    messages.success(request, f"Se agregaron {cantidad} unidad(es) de {insumo.nombre_comercial}.")
+    return redirect('catalog')
+
+# 4. Actualizar cantidad en el carrito
+def update_cart_view(request, item_id):
+    if not request.user.is_authenticated:
+        return redirect('login')
+    item = get_object_or_404(CarroItem, id=item_id, carro__user=request.user)
+    if request.method == 'POST':
+        try:
+            nueva_cantidad = int(request.POST.get('cantidad', 1))
+            if nueva_cantidad > 0:
+                item.cantidad = min(nueva_cantidad, item.insumo.stock_cajas)
+                item.save()
+            else:
+                item.delete()
+        except (ValueError, TypeError):
+            pass
+    return redirect('cart')
+
+# 5. Quitar item del carrito
+def remove_from_cart_view(request, item_id):
+    if not request.user.is_authenticated:
+        return redirect('login')
+    item = get_object_or_404(CarroItem, id=item_id, carro__user=request.user)
+    item.delete()
+    messages.info(request, "Producto eliminado del carrito.")
+    return redirect('cart')
+
+# 6. Checkout / Pago con control de concurrencia (select_for_update)
+@transaction.atomic
+def checkout_view(request):
+    if not request.user.is_authenticated:
+        return redirect('login')
+
+    carro = Carro.objects.filter(user=request.user).first()
+    if not carro or not carro.items.exists():
+        messages.warning(request, "Tu carro de compras está vacío.")
+        return redirect('cart')
+
+    items_carro = list(carro.items.all())
+    # Validación de stock bloqueando filas temporalmente para evitar compras simultáneas
+    for item in items_carro:
+        insumo = Insumo.objects.select_for_update().get(id=item.insumo.id)
+        if insumo.stock_cajas < item.cantidad:
+            if insumo.stock_cajas == 0:
+                messages.error(request, f"'{insumo.nombre_comercial}' se agotó recién en otra compra. Ajusta tu carro.")
+            else:
+                messages.error(request, f"Stock insuficiente para '{insumo.nombre_comercial}': solo quedan {insumo.stock_cajas} cajas.")
+            return redirect('cart')
+
+    # Crear solicitud pagada
+    solicitud = SolicitudAbastecimiento.objects.create(user=request.user, estado='PAGADO')
+    for item in items_carro:
+        insumo = Insumo.objects.select_for_update().get(id=item.insumo.id)
+        insumo.stock_cajas -= item.cantidad
+        insumo.save()
+        SolicitudDetalle.objects.create(
+            solicitud=solicitud,
+            insumo=insumo,
+            cantidad=item.cantidad,
+            precio_unitario_historico=insumo.precio_caja,
+            lote_historico=insumo.lote
         )
 
-        # Guarda snapshot historico y descuenta inventario
-        for item in items:
-            SolicitudDetalle.objects.create(
-                solicitud=solicitud,
-                insumo=item.insumo,
-                nombre_historico=item.insumo.nombre_comercial,
-                lote_historico=item.insumo.lote,
-                precio_unitario_historico=item.insumo.precio_caja,
-                cantidad=item.cantidad
+    carro.items.all().delete()
+    messages.success(request, f"¡Compra procesada con éxito! N° Solicitud #{solicitud.id}")
+    return redirect('catalog')
+
+# 7. Panel de Bodega (solo para el gestor)
+def bodega_view(request):
+    if not is_admin_user(request.user):
+        return redirect('catalog')
+
+    insumos = Insumo.objects.all()
+    total_lotes = insumos.count()
+    criticos_qs = insumos.filter(stock_cajas__lte=5)
+    criticos_count = criticos_qs.count()
+
+    hoy = timezone.now().date()
+    un_ano_adelante = hoy + timedelta(days=365)
+    riesgo_caducidad_qs = insumos.filter(fecha_vencimiento__lte=un_ano_adelante)
+    riesgo_caducidad_count = riesgo_caducidad_qs.count()
+    riesgo_caducidad_pct = int((riesgo_caducidad_count / total_lotes) * 100) if total_lotes > 0 else 0
+
+    solicitudes_pagadas = SolicitudAbastecimiento.objects.filter(estado='PAGADO')
+    total_recaudado = sum(s.total for s in solicitudes_pagadas)
+
+    total_clientes = UserProfile.objects.filter(role='INSTITUCION_MEDICA').count()
+    if total_clientes == 0:
+        total_clientes = 1
+    clientes_activos = solicitudes_pagadas.values('user').distinct().count()
+    alcance_pct = int((clientes_activos / total_clientes) * 100) if total_clientes > 0 else 0
+
+    return render(request, 'store/bodega.html', {
+        'insumos_criticos': criticos_qs,
+        'stock_critico_count': criticos_count,
+        'riesgo_caducidad_count': riesgo_caducidad_count,
+        'riesgo_caducidad_pct': riesgo_caducidad_pct,
+        'total_lotes': total_lotes,
+        'recaudacion_total': total_recaudado,
+        'ordenes_pagadas_count': solicitudes_pagadas.count(),
+        'alcance_pct': alcance_pct,
+        'clientes_activos': clientes_activos,
+        'total_clientes': total_clientes,
+        'is_admin': True
+    })
+
+# 8. Registro de usuario simple (con prompt/mensaje de éxito)
+def register_view(request):
+    error = None
+    if request.method == 'POST':
+        nombre_usuario = request.POST.get('username', '').strip()
+        clave = request.POST.get('password', '').strip()
+
+        if not nombre_usuario or not clave:
+            error = "Ingresa un usuario y una contraseña."
+        elif User.objects.filter(username=nombre_usuario).exists():
+            error = "Ese usuario ya existe, prueba con otro."
+        else:
+            nuevo_usuario = User.objects.create_user(username=nombre_usuario, password=clave)
+            UserProfile.objects.create(
+                user=nuevo_usuario,
+                role='INSTITUCION_MEDICA',
+                institucion_nombre=nombre_usuario
             )
-            item.insumo.stock_cajas -= item.cantidad
-            item.insumo.save()
+            login(request, nuevo_usuario)
+            messages.success(request, f"¡Bienvenido/a {nombre_usuario}! Tu cuenta ha sido creada exitosamente.")
+            return redirect('catalog')
 
-        carro.items.all().delete()
-        serializer = SolicitudAbastecimientoSerializer(solicitud)
-        return Response({'message': 'Solicitud procesada con exito.', 'solicitud': serializer.data}, status=status.HTTP_201_CREATED)
+    return render(request, 'store/register.html', {'error': error})
 
+# 9. Login y Logout
+def login_view(request):
+    error = None
+    if request.method == 'POST':
+        u = request.POST.get('username', '').strip()
+        p = request.POST.get('password', '').strip()
+        user = authenticate(request, username=u, password=p)
+        if user is not None:
+            login(request, user)
+            messages.success(request, f"Sesión iniciada como {user.username}.")
+            if is_admin_user(user):
+                return redirect('bodega')
+            return redirect('catalog')
+        else:
+            error = "Credenciales inválidas."
+    return render(request, 'store/login.html', {'error': error})
 
-# Historial de compras del usuario autenticado
-class MisSolicitudesAPI(generics.ListAPIView):
-    serializer_class = SolicitudAbastecimientoSerializer
-    permission_classes = [permissions.IsAuthenticated]
+def logout_view(request):
+    logout(request)
+    messages.info(request, "Has cerrado sesión correctamente.")
+    return redirect('login')
 
-    def get_queryset(self):
-        return SolicitudAbastecimiento.objects.filter(user=self.request.user).order_by('-created_at')
-
-
-# Cambio de estado de orden y reposicion automatica ante CANCELADO
-class CambiarEstadoSolicitudAPI(APIView):
-    permission_classes = [IsGestorBodega]
-
-    @transaction.atomic
-    def patch(self, request, pk):
-        try:
-            solicitud = SolicitudAbastecimiento.objects.select_for_update().get(pk=pk)
-        except SolicitudAbastecimiento.DoesNotExist:
-            return Response({'error': 'Solicitud no encontrada'}, status=status.HTTP_404_NOT_FOUND)
-
-        nuevo_estado = request.data.get('estado')
-        if nuevo_estado not in dict(SolicitudAbastecimiento.ESTADO_CHOICES):
-            return Response({'error': 'Estado invalido'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Si se cancela una orden pagada, se devuelve el stock a bodega
-        if nuevo_estado == 'CANCELADO' and solicitud.estado == 'PAGADO':
-            for det in solicitud.detalles.select_related('insumo').all():
-                insumo = det.insumo
-                insumo.stock_cajas += det.cantidad
-                insumo.save()
-
-        solicitud.estado = nuevo_estado
-        solicitud.save()
-        return Response({'message': f'Estado: {solicitud.get_estado_display()}', 'estado': solicitud.estado}, status=status.HTTP_200_OK)
-
-
-# Metricas del dashboard: riesgo de vencimiento, stock critico, recaudacion y alcance
-class BodegaDashboardStatsAPI(APIView):
-    permission_classes = [IsGestorBodega]
-
+# 10. API REST para Swagger
+class InsumoListAPI(APIView):
+    """Retorna el listado de insumos y stock disponible"""
     def get(self, request):
-        insumos = Insumo.objects.all()
-        total_insumos = insumos.count()
-        insumos_criticos = insumos.filter(stock_cajas__lte=5)
-        
-        # Metrica: insumos con vencimiento a menos de 1 ano
-        fecha_umbral = date.today() + timedelta(days=365)
-        insumos_vencimiento_proximo = insumos.filter(fecha_vencimiento__lte=fecha_umbral)
-        tasa_riesgo_vencimiento = round((insumos_vencimiento_proximo.count() / total_insumos * 100), 1) if total_insumos > 0 else 0
-
-        # Total recaudado en ordenes pagadas o entregadas
-        solicitudes = SolicitudAbastecimiento.objects.filter(estado__in=['PAGADO', 'ENTREGADO'])
-        total_recaudado = sum(s.total for s in solicitudes)
-        
-        # Metrica: alcance de clientes con carros activos
-        carro_items = CarroItem.objects.all()
-        carro_users_count = carro_items.values('carro__user').distinct().count()
-        total_clientes = User.objects.filter(profile__role='INSTITUCION_MEDICA').count()
-        reach = round((carro_users_count / total_clientes * 100), 1) if total_clientes > 0 else 0
-
-        return Response({
-            'total_insumos': total_insumos,
-            'criticos_count': insumos_criticos.count(),
-            'insumos_criticos': InsumoSerializer(insumos_criticos, many=True).data,
-            'vencimiento_proximo_count': insumos_vencimiento_proximo.count(),
-            'tasa_riesgo_vencimiento': tasa_riesgo_vencimiento,
-            'total_solicitudes': SolicitudAbastecimiento.objects.count(),
-            'total_recaudado': total_recaudado,
-            'reach_percentage': reach,
-            'carro_users_count': carro_users_count,
-            'total_instituciones': total_clientes
-        }, status=status.HTTP_200_OK)
-
+        insumos = Insumo.objects.all().values('id', 'nombre_comercial', 'principio_activo', 'lote', 'stock_cajas', 'precio_caja')
+        return Response(list(insumos))

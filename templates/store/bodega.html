@@ -1,111 +1,77 @@
 ﻿{% extends 'store/base.html' %}
-{% block title %}Control de Abastecimiento y Bodega{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+<div class="mb-4">
+  <span class="badge bg-danger mb-2">Acceso Gestor de Bodega</span>
+  <div class="d-flex justify-content-between align-items-center">
     <div>
-        <span class="badge bg-danger mb-1">Acceso Gestor de Bodega</span>
-        <h2 class="fw-bold text-dark">Gestión de Abastecimiento y Control de Bodega</h2>
-        <p class="text-muted mb-0">KPIs de rotación, riesgo de caducidad y alcance hospitalario.</p>
+      <h2 class="fw-bold mb-1">Gestión de Abastecimiento y Control de Bodega</h2>
+      <p class="text-muted mb-0">KPIs de rotación, riesgo de caducidad y alcance hospitalario.</p>
     </div>
-    <a href="/" class="btn btn-outline-primary rounded-pill px-3">Ir a Insumos</a>
+    <a href="/" class="btn btn-outline-primary rounded-pill px-4">Ir a Insumos</a>
+  </div>
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="card card-med p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Alcance Institucional</small>
-            <h3 class="fw-bold text-primary mt-2 mb-0" id="statReach">0%</h3>
-            <small class="text-muted" id="statReachDetail">0 clientes activos</small>
-        </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm rounded-4 text-center p-3">
+      <small class="text-muted fw-bold">ALCANCE INSTITUCIONAL</small>
+      <h2 class="text-primary fw-bold my-1">{{ alcance_pct }}%</h2>
+      <small class="text-muted">{{ clientes_activos }} de {{ total_clientes }} clientes</small>
     </div>
-    <div class="col-md-3">
-        <div class="card card-med p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Riesgo Caducidad (&lt;1 año)</small>
-            <h3 class="fw-bold text-warning mt-2 mb-0" id="statRisk">0%</h3>
-            <small class="text-muted" id="statRiskDetail">0 lotes próximos</small>
-        </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm rounded-4 text-center p-3">
+      <small class="text-muted fw-bold">RIESGO CADUCIDAD (&lt;1 AÑO)</small>
+      <h2 class="text-warning fw-bold my-1">{{ riesgo_caducidad_pct }}%</h2>
+      <small class="text-muted">{{ riesgo_caducidad_count }} de {{ total_lotes }} lotes</small>
     </div>
-    <div class="col-md-3">
-        <div class="card card-med p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Total Recaudado</small>
-            <h3 class="fw-bold text-success mt-2 mb-0" id="statRecaudado">$0</h3>
-            <small class="text-muted">Órdenes pagadas</small>
-        </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm rounded-4 text-center p-3">
+      <small class="text-muted fw-bold">TOTAL RECAUDADO</small>
+      <h2 class="text-success fw-bold my-1">${{ recaudacion_total }}</h2>
+      <small class="text-muted">{{ ordenes_pagadas_count }} Órdenes pagadas</small>
     </div>
-    <div class="col-md-3">
-        <div class="card card-med p-3 text-center">
-            <small class="text-muted text-uppercase fw-semibold">Stock Crítico (&le; 5)</small>
-            <h3 class="fw-bold text-danger mt-2 mb-0" id="statCriticos">0</h3>
-            <small class="text-danger">Riesgo de quiebre</small>
-        </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card border-0 shadow-sm rounded-4 text-center p-3">
+      <small class="text-muted fw-bold">STOCK CRÍTICO (&le; 5)</small>
+      <h2 class="text-danger fw-bold my-1">{{ stock_critico_count }}</h2>
+      <small class="text-danger">Riesgo de quiebre</small>
     </div>
+  </div>
 </div>
 
-<div class="card card-med p-4">
-    <h5 class="fw-bold text-danger mb-3"><i class="bi bi-exclamation-triangle me-2"></i>Insumos con Quiebre Inminente de Stock</h5>
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
-                <tr>
-                    <th>Nombre Comercial</th>
-                    <th>Principio Activo</th>
-                    <th>Lote</th>
-                    <th>Vencimiento</th>
-                    <th>Stock Cajas</th>
-                </tr>
-            </thead>
-            <tbody id="criticosTableBody"></tbody>
-        </table>
-    </div>
+<div class="card border-0 shadow-sm rounded-4 p-4">
+  <h5 class="text-danger fw-bold mb-3"><i class="bi bi-exclamation-triangle"></i> Insumos con Quiebre Inminente de Stock</h5>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>Nombre Comercial</th>
+          <th>Principio Activo</th>
+          <th>Lote</th>
+          <th>Vencimiento</th>
+          <th>Stock Cajas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in insumos_criticos %}
+        <tr>
+          <td class="fw-bold">{{ item.nombre_comercial }}</td>
+          <td>{{ item.principio_activo }}</td>
+          <td><span class="badge bg-light text-danger border border-danger">{{ item.lote }}</span></td>
+          <td>{{ item.fecha_vencimiento }}</td>
+          <td><span class="badge bg-danger rounded-pill px-3">{{ item.stock_cajas }} cajas</span></td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-3">No hay insumos con stock crítico actualmente.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-const token = localStorage.getItem('access_token');
-if (!token) {
-    window.location.href = '/login/';
-}
-
-fetch('/api/admin/dashboard/', { 
-    headers: { 'Authorization': `Bearer ${token}` } 
-})
-.then(res => {
-    if (res.status === 401 || res.status === 403) {
-        alert("Acceso denegado: este panel es exclusivo para Gestores de Bodega (Admin). Inicie sesión con la cuenta correspondiente.");
-        window.location.href = '/login/';
-        return null;
-    }
-    return res.json();
-})
-.then(d => {
-    if (!d) return;
-    document.getElementById('statReach').textContent = `${d.reach_percentage}%`;
-    document.getElementById('statReachDetail').textContent = `${d.carro_users_count} de ${d.total_instituciones} clientes`;
-    document.getElementById('statRisk').textContent = `${d.tasa_riesgo_vencimiento}%`;
-    document.getElementById('statRiskDetail').textContent = `${d.vencimiento_proximo_count} de ${d.total_insumos} lotes`;
-    document.getElementById('statRecaudado').textContent = '$' + Number(d.total_recaudado).toLocaleString('es-CL');
-    document.getElementById('statCriticos').textContent = d.criticos_count;
-
-    const tbody = document.getElementById('criticosTableBody');
-    tbody.innerHTML = '';
-    if (!d.insumos_criticos || d.insumos_criticos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Todos los insumos cuentan con stock seguro.</td></tr>';
-        return;
-    }
-    d.insumos_criticos.forEach(it => {
-        tbody.innerHTML += `
-            <tr>
-                <td class="fw-bold">${it.nombre_comercial}</td>
-                <td>${it.principio_activo}</td>
-                <td><code>${it.lote}</code></td>
-                <td>${it.fecha_vencimiento}</td>
-                <td><span class="badge bg-danger">${it.stock_cajas} cajas</span></td>
-            </tr>
-        `;
-    });
-})
-.catch(err => console.error("Error al cargar métricas:", err));
-</script>
 {% endblock %}

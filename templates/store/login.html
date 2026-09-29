@@ -1,62 +1,42 @@
-﻿{% extends 'store/base.html' %}
-{% block title %}Acceso Institucional - MediSupply{% endblock %}
+{% extends 'store/base.html' %}
 
 {% block content %}
-<div class="row justify-content-center mt-5">
-    <div class="col-md-4">
-        <div class="card card-med p-4 text-center">
-            <i class="bi bi-shield-lock-fill fs-1 text-primary mb-2"></i>
-            <h4 class="fw-bold">Acceso MediSupply</h4>
-            <p class="text-muted small">Ingrese credenciales clinicas o de bodega</p>
-            <div id="errorAlert" class="alert alert-danger d-none py-2 small"></div>
-
-            <form id="loginForm" class="text-start">
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold">Usuario</label>
-                    <input type="text" id="username" class="form-control" required autofocus>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold">Contrasena</label>
-                    <input type="password" id="password" class="form-control" required>
-                </div>
-                <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">Ingresar con JWT</button>
-            </form>
+<div class="row justify-content-center pt-5">
+  <div class="col-md-5 col-lg-4">
+    <div class="card shadow-sm border-0 rounded-4">
+      <div class="card-body p-4 text-center">
+        <div class="mb-3 text-primary">
+          <i class="bi bi-shield-lock-fill fs-1"></i>
         </div>
+        <h4 class="fw-bold mb-1">Iniciar Sesión</h4>
+        <p class="text-muted small mb-4">Ingresa con tu usuario y contraseña</p>
+
+        {% if error %}
+          <div class="alert alert-danger py-2 small" role="alert">
+            {{ error }}
+          </div>
+        {% endif %}
+
+        <form method="POST" action="/login/" class="text-start">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Usuario</label>
+            <input type="text" name="username" class="form-control rounded-3" placeholder="Ej: cliente_matias" required autofocus>
+          </div>
+          <div class="mb-4">
+            <label class="form-label small fw-semibold">Contraseña</label>
+            <input type="password" name="password" class="form-control rounded-3" placeholder="••••••••" required>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 rounded-pill py-2 fw-semibold">
+            Ingresar
+          </button>
+        </form>
+
+        <div class="mt-3 text-center">
+          <small class="text-muted">¿No tienes cuenta? <a href="/register/" class="text-decoration-none fw-semibold">Crear cuenta</a></small>
+        </div>
+      </div>
     </div>
+  </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.getElementById('loginForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const alertBox = document.getElementById('errorAlert');
-    alertBox.classList.add('d-none');
-
-    const u = document.getElementById('username').value.trim();
-    const p = document.getElementById('password').value;
-
-    const res = await fetch('/api/token/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: u, password: p })
-    });
-    const d = await res.json();
-
-    if (res.ok && d.access) {
-        localStorage.setItem('access_token', d.access);
-        localStorage.setItem('username', d.username);
-        localStorage.setItem('user_role', d.role);
-
-        if (d.role === 'GESTOR_BODEGA') {
-            window.location.href = '/dashboard/';
-        } else {
-            window.location.href = '/carro/';
-        }
-    } else {
-        alertBox.textContent = d.detail || 'Credenciales invalidas';
-        alertBox.classList.remove('d-none');
-    }
-});
-</script>
 {% endblock %}
